@@ -1,6 +1,6 @@
 # AmBe Source Watcher - Videocamera Surveillance
 
-This code is used to implement a person identificator using a deep neural network model. It receives the feed from a camera using the RTSP stream. 
+This code is used to implement a person identificator using a deep neural network model. It receives the feed from a camera using the RTSP stream. The purpose of the DNN is to recognize if a person shows up in scene, record the time of first appereance and the time when the person leaves the scene. It will send an alarm to the data base alerting of the precense of unauthorized people in the area close to the radioactive source. 
 
 
 ## Dependencies
@@ -13,8 +13,8 @@ Before doing anything, download the following files to this directory
 
 Also, you need the following packages in your python virtual environment:
 
-- OpenCV
-- InfluxDB 
+- OpenCV (Visualize camera output and run the DNN)
+- InfluxDB (Push alarms to the data base)
 
 ## How to Run
 ```python source_watcher.py```
@@ -38,5 +38,7 @@ During the execution of the script, enter the option tunnel. The program will as
 ## Debug Tips
 
 * You can check if the camera is visible by doing:
-```ping <CAMERA IP ADDRESS>```
+```ping <CAMERA IP ADDRESS>```.
+
+* To keep the program executing you can use a tmux or screen session. 
 
