@@ -27,7 +27,7 @@ The program will ask you for the following inputs:
 
 Note that this code will automatically generate a URL to access to your camera. To close the program, simply close the camera window, press q in the camera window, or do ctrl+C in the terminal executing the code. 
 
-## Using SSH an Tunnel
+## Using an SSH Tunnel
 
 Open the SSH tunnel before running this script. Also, make sure you forward port 554 (at least for AXIS cameras), which is the one that provides the RTSP stream. For instance:
 
