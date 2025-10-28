@@ -27,5 +27,5 @@ The program will ask you for the following inputs:
 
 - (if tunnel) local forward port
 
-Note that this code will automatically generate a URL to access to your camera. To close the program, simply close the camera window, or press ctrl+C on the terminal. 
+Note that this code will automatically generate a URL to access to your camera. To close the program, simply close the camera window, press q in the camera window, or do ctrl+C in the terminal executing the code. 
 
