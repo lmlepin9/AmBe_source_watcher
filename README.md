@@ -3,9 +3,9 @@
 This code is used to implement a person identificator using a deep neural network model. It receives the feed from a camera using the RTSP stream. 
 
 
-# Dependencies
+## Dependencies
 
-You should make sure you download the following files to this directory
+Before doing anything, download the following files to this directory
 
 [MobileNetSSD_deploy.prototxt](https://drive.google.com/file/d/0B3gersZ2cHIxRm5PMWRoTkdHdHc/view?resourcekey=0-1Lpfs4EvGDeCQz12AF64hQ)
 
@@ -16,7 +16,7 @@ Also, you need the following packages in your python virtual environment:
 - OpenCV
 - InfluxDB 
 
-# How to Run
+## How to Run
 ```python source_watcher.py```
 
 The program will ask you for the following inputs:
@@ -25,7 +25,18 @@ The program will ask you for the following inputs:
 - Camera username and password
 - Camera IP
 
-- (if tunnel) local forward port
-
 Note that this code will automatically generate a URL to access to your camera. To close the program, simply close the camera window, press q in the camera window, or do ctrl+C in the terminal executing the code. 
+
+## Using SSH an Tunnel
+
+Open the SSH tunnel before running this script. Also, make sure you forward port 554 (at least for AXIS cameras), which is the one that provides the RTSP stream. For instance:
+
+```ssh -L 10554:<CAMERA IP ADDRESS>:554 <YOUR PROXY JUMP HOST>```
+
+During the execution of the script, enter the option tunnel. The program will ask you for the local forward port (10554 in this example).
+
+## Debug Tips
+
+* You can check if the camera is visible by doing:
+```ping <CAMERA IP ADDRESS>```
 
