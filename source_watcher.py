@@ -1,10 +1,9 @@
 import cv2
 import numpy as np
 import time
+import shutil
+import subprocess
 from datetime import datetime
-import threading
-import tk
-
 
 # -----------------------------------------------------------
 # Helper function to build the RTSP URL
@@ -17,48 +16,69 @@ def build_camera_url(local_mode, user, password, ip, forward_port=None):
             raise ValueError("Forward port must be provided for tunnel mode.")
         return f"rtsp://{user}:{password}@localhost:{forward_port}/axis-media/media.amp"
 
-
 # -----------------------------------------------------------
-# Popup alert window (tkinter, persistent until closed)
+# Terminal-based alert (opens a terminal on top and prints message)
 # -----------------------------------------------------------
-def show_popup_alert(message):
+def show_terminal_alert(message):
     """
-    Display a popup alert window always on top of other windows.
-    Stays open until the user closes it manually.
+    Open a new terminal window and display an alert message.
+    The terminal remains open until the user closes it.
+    Works with common terminal emulators on Linux (xterm, gnome-terminal, konsole, xfce4-terminal).
     """
-    def _popup():
-        root = tk.Tk()
-        root.title("⚠️ Intruder Alert!")
-        root.attributes('-topmost', True)       # keep window on top
-        root.geometry("420x160+600+350")        # size and position
-        root.configure(bg='red')
+    # ANSI codes for bold red text and reset
+    RED_BOLD = "\033[1;31m"
+    RESET = "\033[0m"
 
-        label = tk.Label(root,
-                         text=message,
-                         font=("Arial", 16, "bold"),
-                         fg="white",
-                         bg="red",
-                         wraplength=380,
-                         justify="center")
-        label.pack(expand=True, fill="both", padx=20, pady=(20, 10))
+    alert_text = f"{RED_BOLD}INTRUDER ALERT{RESET}\n\n{message}\n\nPress ENTER to keep this terminal open, or close the window to dismiss."
 
-        btn = tk.Button(root,
-                        text="Dismiss",
-                        font=("Arial", 14, "bold"),
-                        fg="white",
-                        bg="black",
-                        command=root.destroy)
-        btn.pack(pady=(0, 20))
+    # Find a terminal emulator
+    terminal = shutil.which("xterm") or shutil.which("gnome-terminal") \
+               or shutil.which("konsole") or shutil.which("xfce4-terminal") \
+               or shutil.which("terminator") or shutil.which("urxvt")
 
-        root.mainloop()
+    if not terminal:
+        # fallback to printing in the current console
+        print("No suitable terminal emulator found. Printing alert to standard output:")
+        print(alert_text)
+        return
 
-    threading.Thread(target=_popup, daemon=True).start()
+    # Build a shell command that prints the message and then runs an interactive shell
+    # Use a here-doc to make quoting safe
+    bash_command = "cat <<'EOF'\n" + alert_text + "\nEOF\nexec bash"
+
+    try:
+        # Different terminals have different preferred argument styles
+        tname = terminal.split("/")[-1]  # extract base name
+        if tname == "xterm" or tname == "urxvt":
+            cmd = [terminal, "-hold", "-geometry", "80x12+600+300", "-T", "Intruder Alert", "-e", "bash", "-lc", bash_command]
+        elif tname == "gnome-terminal":
+            # modern gnome-terminal prefers -- bash -lc ...
+            cmd = [terminal, "--window", "--", "bash", "-lc", bash_command]
+        elif tname == "xfce4-terminal":
+            cmd = [terminal, "--hold", "--geometry=80x12+600+300", "--title=Intruder Alert", "--", "bash", "-lc", bash_command]
+        elif tname == "konsole":
+            cmd = [terminal, "--hold", "--new-tab", "-p", "tabtitle=Intruder Alert", "-e", "bash", "-lc", bash_command]
+        elif tname == "terminator":
+            cmd = [terminal, "-x", "bash", "-lc", bash_command]
+        else:
+            # Generic fallback: try to execute bash -lc via the terminal
+            cmd = [terminal, "-e", "bash", "-lc", bash_command]
+
+        # Launch without waiting
+        subprocess.Popen(cmd)
+    except Exception as e:
+        # If terminal launch fails, fallback to printing
+        print("Failed to open terminal emulator for alert:", e)
+        print(alert_text)
 
 
 # -----------------------------------------------------------
 # Main DNN surveillance function
 # -----------------------------------------------------------
 def run_surveillance(camera_url):
+    """
+    Run DNN-based person detection on an RTSP camera stream.
+    """
     net = cv2.dnn.readNetFromCaffe("MobileNetSSD_deploy.prototxt",
                                    "MobileNetSSD_deploy.caffemodel")
 
@@ -69,14 +89,14 @@ def run_surveillance(camera_url):
 
     video = cv2.VideoCapture(camera_url)
     if not video.isOpened():
-        print(f"❌ Failed to open camera stream at {camera_url}")
+        print(f"Failed to open camera stream at {camera_url}")
         return
 
-    print("\nStarting DNN-based AmBe source surveillance\n")
+    print("\nStarting DNN-based surveillance\n")
 
     person_present = False
     last_alert_time = 0
-    alert_cooldown = 300  # 5 minutes
+    alert_cooldown = 300  # seconds, 5 minutes
 
     try:
         while True:
@@ -94,7 +114,7 @@ def run_surveillance(camera_url):
             detected = False
 
             for i in range(detections.shape[2]):
-                confidence = detections[0, 0, i, 2]
+                confidence = float(detections[0, 0, i, 2])
                 idx = int(detections[0, 0, i, 1])
 
                 if CLASSES[idx] == "person" and confidence > 0.5:
@@ -102,7 +122,7 @@ def run_surveillance(camera_url):
                     box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
                     (x1, y1, x2, y2) = box.astype("int")
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                    cv2.putText(frame, f"Intruder! {confidence:.2f}",
+                    cv2.putText(frame, f"Person {confidence:.2f}",
                                 (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                                 (0, 0, 255), 2)
@@ -114,12 +134,13 @@ def run_surveillance(camera_url):
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 if current_time - last_alert_time > alert_cooldown:
-                    print(f"🚨 ALERT: PERSON DETECTED at {ts}")
-                    cv2.imwrite(f"alert_{int(current_time)}.jpg", frame)
+                    print(f"ALERT: PERSON DETECTED at {ts}")
+                    filename = f"alert_{int(current_time)}.jpg"
+                    cv2.imwrite(filename, frame)
                     last_alert_time = current_time
 
-                    # Persistent popup alert
-                    show_popup_alert(f"Person detected at {ts}\n\n(Press 'Dismiss' to close)")
+                    # terminal alert message
+                    show_terminal_alert(f"Person detected at {ts}\nSaved image: {filename}")
                 else:
                     remaining = int(alert_cooldown - (current_time - last_alert_time))
                     print(f"Person detected but still in cooldown ({remaining}s left)")
@@ -129,18 +150,20 @@ def run_surveillance(camera_url):
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 print(f"Scene clear at {ts}")
 
-            cv2.imshow("AmBe source surveillance", frame)
+            cv2.imshow("Surveillance", frame)
 
+            # quit on 'q'
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 print("Exit requested via keyboard.")
                 break
 
-            if cv2.getWindowProperty("AmBe source surveillance", cv2.WND_PROP_VISIBLE) < 1:
+            # if the window was closed manually, exit
+            if cv2.getWindowProperty("Surveillance", cv2.WND_PROP_VISIBLE) < 1:
                 print("Window closed, exiting surveillance.")
                 break
 
     except KeyboardInterrupt:
-        print("\n Program interrupted by user.")
+        print("\nProgram interrupted by user.")
 
     video.release()
     cv2.destroyAllWindows()
@@ -150,7 +173,7 @@ def run_surveillance(camera_url):
 # Main execution
 # -----------------------------------------------------------
 if __name__ == "__main__":
-    print("=== AmBe Source Surveillance Configuration ===")
+    print("=== Surveillance Configuration ===")
     local_or_tunnel = input("Run locally or via tunnel? [local/tunnel]: ").strip().lower()
     user = input("Camera username: ").strip()
     password = input("Camera password: ").strip()
