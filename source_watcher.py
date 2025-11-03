@@ -3,49 +3,53 @@ import numpy as np
 import time
 from datetime import datetime
 import threading
-import tkinter as tk
+import tk
 
 
 # -----------------------------------------------------------
 # Helper function to build the RTSP URL
 # -----------------------------------------------------------
 def build_camera_url(local_mode, user, password, ip, forward_port=None):
-    """
-    Build the RTSP URL for OpenCV depending on local or tunnel mode.
-    """
     if local_mode:
-        url = f"rtsp://{user}:{password}@{ip}/axis-media/media.amp"
+        return f"rtsp://{user}:{password}@{ip}/axis-media/media.amp"
     else:
         if forward_port is None:
             raise ValueError("Forward port must be provided for tunnel mode.")
-        url = f"rtsp://{user}:{password}@localhost:{forward_port}/axis-media/media.amp"
-    return url
+        return f"rtsp://{user}:{password}@localhost:{forward_port}/axis-media/media.amp"
 
 
 # -----------------------------------------------------------
-# Popup alert window (tkinter)
+# Popup alert window (tkinter, persistent until closed)
 # -----------------------------------------------------------
 def show_popup_alert(message):
     """
     Display a popup alert window always on top of other windows.
-    Runs in a separate thread so it doesn't block OpenCV.
+    Stays open until the user closes it manually.
     """
     def _popup():
         root = tk.Tk()
         root.title("⚠️ Intruder Alert!")
-        root.attributes('-topmost', True)      # keep window on top
-        root.geometry("400x150+600+350")       # size + position
+        root.attributes('-topmost', True)       # keep window on top
+        root.geometry("420x160+600+350")        # size and position
         root.configure(bg='red')
 
         label = tk.Label(root,
                          text=message,
                          font=("Arial", 16, "bold"),
                          fg="white",
-                         bg="red")
-        label.pack(expand=True, fill="both", padx=20, pady=20)
+                         bg="red",
+                         wraplength=380,
+                         justify="center")
+        label.pack(expand=True, fill="both", padx=20, pady=(20, 10))
 
-        # Auto-close after 10 seconds
-        root.after(10000, root.destroy)
+        btn = tk.Button(root,
+                        text="Dismiss",
+                        font=("Arial", 14, "bold"),
+                        fg="white",
+                        bg="black",
+                        command=root.destroy)
+        btn.pack(pady=(0, 20))
+
         root.mainloop()
 
     threading.Thread(target=_popup, daemon=True).start()
@@ -55,9 +59,6 @@ def show_popup_alert(message):
 # Main DNN surveillance function
 # -----------------------------------------------------------
 def run_surveillance(camera_url):
-    """
-    Run DNN-based person detection on an RTSP camera stream.
-    """
     net = cv2.dnn.readNetFromCaffe("MobileNetSSD_deploy.prototxt",
                                    "MobileNetSSD_deploy.caffemodel")
 
@@ -117,8 +118,8 @@ def run_surveillance(camera_url):
                     cv2.imwrite(f"alert_{int(current_time)}.jpg", frame)
                     last_alert_time = current_time
 
-                    # --- Popup alert window ---
-                    show_popup_alert(f"Person detected at {ts}")
+                    # Persistent popup alert
+                    show_popup_alert(f"Person detected at {ts}\n\n(Press 'Dismiss' to close)")
                 else:
                     remaining = int(alert_cooldown - (current_time - last_alert_time))
                     print(f"Person detected but still in cooldown ({remaining}s left)")
