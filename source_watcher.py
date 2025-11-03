@@ -24,9 +24,6 @@ def build_camera_url(local_mode, user, password, ip, forward_port=None):
 # Main DNN surveillance function
 # -----------------------------------------------------------
 def run_surveillance(camera_url):
-    """
-    Run DNN-based person detection on an RTSP camera stream.
-    """
     net = cv2.dnn.readNetFromCaffe("MobileNetSSD_deploy.prototxt",
                                    "MobileNetSSD_deploy.caffemodel")
 
@@ -43,6 +40,8 @@ def run_surveillance(camera_url):
     print("\nStarting DNN-based AmBe source surveillance\n")
 
     person_present = False
+    last_alert_time = 0        # Track the last saved alert timestamp
+    alert_cooldown = 300       # 5 minutes in seconds
 
     try:
         while True:
@@ -73,11 +72,19 @@ def run_surveillance(camera_url):
                                 (0, 0, 255), 2)
 
             # --- Alert logic ---
+            current_time = time.time()
+
             if detected and not person_present:
                 person_present = True
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"ALERT: PERSON DETECTED at {ts}")
-                cv2.imwrite(f"alert_{int(time.time())}.jpg", frame)
+
+                # Only save an image if cooldown has passed
+                if current_time - last_alert_time > alert_cooldown:
+                    print(f"ALERT: PERSON DETECTED at {ts}")
+                    cv2.imwrite(f"alert_{int(current_time)}.jpg", frame)
+                    last_alert_time = current_time
+                else:
+                    print(f"Person detected but still in cooldown ({int(alert_cooldown - (current_time - last_alert_time))}s left)")
 
             elif not detected and person_present:
                 person_present = False
@@ -86,12 +93,10 @@ def run_surveillance(camera_url):
 
             cv2.imshow("AmBe source surveillance", frame)
 
-            # Check if window closed or 'q' pressed
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 print("Exit requested via keyboard.")
                 break
 
-            # If window closed manually
             if cv2.getWindowProperty("AmBe source surveillance", cv2.WND_PROP_VISIBLE) < 1:
                 print("Window closed, exiting surveillance.")
                 break
