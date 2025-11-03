@@ -70,6 +70,35 @@ def show_terminal_alert(message):
 
 
 # -----------------------------------------------------------
+# Datetime overlay helper
+# -----------------------------------------------------------
+def draw_datetime_banner(frame):
+    """
+    Draws a semi-transparent banner with weekday, date, and current time
+    on the top-left of the frame.
+    """
+    text = datetime.now().strftime("%A %Y-%m-%d %H:%M:%S")
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.7
+    thickness = 2
+    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
+
+    x, y = 12, 12 + th   # top-left corner text baseline
+    pad = 8
+
+    # Background rectangle (semi-transparent)
+    x1, y1 = x - pad, y - th - pad
+    x2, y2 = x + tw + pad, y + baseline + pad
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), -1)
+    alpha = 0.45
+    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, dst=frame)
+
+    # Text (white)
+    cv2.putText(frame, text, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+
+# -----------------------------------------------------------
 # Main DNN surveillance function
 # -----------------------------------------------------------
 def run_surveillance(camera_url):
@@ -153,6 +182,9 @@ def run_surveillance(camera_url):
                 person_present = False
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 print(f"Scene clear at {ts}")
+
+            # Draw date/time banner every frame
+            draw_datetime_banner(frame)
 
             cv2.imshow("Surveillance", frame)
 
