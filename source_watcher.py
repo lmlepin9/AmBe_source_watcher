@@ -3,6 +3,7 @@ import numpy as np
 import time
 import shutil
 import subprocess
+import os
 from datetime import datetime
 
 # -----------------------------------------------------------
@@ -16,59 +17,55 @@ def build_camera_url(local_mode, user, password, ip, forward_port=None):
             raise ValueError("Forward port must be provided for tunnel mode.")
         return f"rtsp://{user}:{password}@localhost:{forward_port}/axis-media/media.amp"
 
+
 # -----------------------------------------------------------
-# Terminal-based alert (opens a terminal on top and prints message)
+# Terminal-based alert (all red text)
 # -----------------------------------------------------------
 def show_terminal_alert(message):
     """
-    Open a new terminal window and display an alert message.
+    Open a new terminal window displaying an alert message in red.
     The terminal remains open until the user closes it.
-    Works with common terminal emulators on Linux (xterm, gnome-terminal, konsole, xfce4-terminal).
+    Works with common Linux terminal emulators.
     """
-    # ANSI codes for bold red text and reset
-    RED_BOLD = "\033[1;31m"
+    RED = "\033[31m"
     RESET = "\033[0m"
 
-    alert_text = f"{RED_BOLD}INTRUDER ALERT{RESET}\n\n{message}\n\nPress ENTER to keep this terminal open, or close the window to dismiss."
+    # Entire message in red
+    alert_text = f"{RED}INTRUDER ALERT\n\n{message}\n\nThis terminal will remain open until you close it.{RESET}"
 
-    # Find a terminal emulator
+    # Detect a terminal emulator
     terminal = shutil.which("xterm") or shutil.which("gnome-terminal") \
                or shutil.which("konsole") or shutil.which("xfce4-terminal") \
                or shutil.which("terminator") or shutil.which("urxvt")
 
     if not terminal:
-        # fallback to printing in the current console
-        print("No suitable terminal emulator found. Printing alert to standard output:")
+        print("No terminal emulator found. Printing alert to console:")
         print(alert_text)
         return
 
-    # Build a shell command that prints the message and then runs an interactive shell
-    # Use a here-doc to make quoting safe
     bash_command = "cat <<'EOF'\n" + alert_text + "\nEOF\nexec bash"
 
     try:
-        # Different terminals have different preferred argument styles
-        tname = terminal.split("/")[-1]  # extract base name
+        tname = terminal.split("/")[-1]
         if tname == "xterm" or tname == "urxvt":
-            cmd = [terminal, "-hold", "-geometry", "80x12+600+300", "-T", "Intruder Alert", "-e", "bash", "-lc", bash_command]
+            cmd = [terminal, "-hold", "-geometry", "80x12+600+300", "-T", "Intruder Alert",
+                   "-e", "bash", "-lc", bash_command]
         elif tname == "gnome-terminal":
-            # modern gnome-terminal prefers -- bash -lc ...
             cmd = [terminal, "--window", "--", "bash", "-lc", bash_command]
         elif tname == "xfce4-terminal":
-            cmd = [terminal, "--hold", "--geometry=80x12+600+300", "--title=Intruder Alert", "--", "bash", "-lc", bash_command]
+            cmd = [terminal, "--hold", "--geometry=80x12+600+300", "--title=Intruder Alert",
+                   "--", "bash", "-lc", bash_command]
         elif tname == "konsole":
-            cmd = [terminal, "--hold", "--new-tab", "-p", "tabtitle=Intruder Alert", "-e", "bash", "-lc", bash_command]
+            cmd = [terminal, "--hold", "--new-tab", "-p", "tabtitle=Intruder Alert",
+                   "-e", "bash", "-lc", bash_command]
         elif tname == "terminator":
             cmd = [terminal, "-x", "bash", "-lc", bash_command]
         else:
-            # Generic fallback: try to execute bash -lc via the terminal
             cmd = [terminal, "-e", "bash", "-lc", bash_command]
 
-        # Launch without waiting
         subprocess.Popen(cmd)
     except Exception as e:
-        # If terminal launch fails, fallback to printing
-        print("Failed to open terminal emulator for alert:", e)
+        print("Failed to open terminal for alert:", e)
         print(alert_text)
 
 
@@ -87,6 +84,14 @@ def run_surveillance(camera_url):
                "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
                "sofa", "train", "tvmonitor"]
 
+    # Create directory for alert images
+    alert_dir = "alerts"
+    if not os.path.exists(alert_dir):
+        os.makedirs(alert_dir)
+        print(f"Created directory '{alert_dir}' for alert images.")
+    else:
+        print(f"Using existing directory '{alert_dir}' for alert images.")
+
     video = cv2.VideoCapture(camera_url)
     if not video.isOpened():
         print(f"Failed to open camera stream at {camera_url}")
@@ -96,7 +101,7 @@ def run_surveillance(camera_url):
 
     person_present = False
     last_alert_time = 0
-    alert_cooldown = 300  # seconds, 5 minutes
+    alert_cooldown = 300  # 5 minutes
 
     try:
         while True:
@@ -135,12 +140,11 @@ def run_surveillance(camera_url):
 
                 if current_time - last_alert_time > alert_cooldown:
                     print(f"ALERT: PERSON DETECTED at {ts}")
-                    filename = f"alert_{int(current_time)}.jpg"
+                    filename = os.path.join(alert_dir, f"alert_{int(current_time)}.jpg")
                     cv2.imwrite(filename, frame)
                     last_alert_time = current_time
 
-                    # terminal alert message
-                    show_terminal_alert(f"Person detected at {ts}\nSaved image: {filename}")
+                    show_terminal_alert(f"Person detected at {ts}\nImage saved: {filename}")
                 else:
                     remaining = int(alert_cooldown - (current_time - last_alert_time))
                     print(f"Person detected but still in cooldown ({remaining}s left)")
@@ -152,12 +156,10 @@ def run_surveillance(camera_url):
 
             cv2.imshow("Surveillance", frame)
 
-            # quit on 'q'
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 print("Exit requested via keyboard.")
                 break
 
-            # if the window was closed manually, exit
             if cv2.getWindowProperty("Surveillance", cv2.WND_PROP_VISIBLE) < 1:
                 print("Window closed, exiting surveillance.")
                 break

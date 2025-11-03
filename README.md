@@ -2,6 +2,9 @@
 
 This code is used to implement a person identificator using a deep neural network model. It receives the feed from a camera using the RTSP stream. The purpose of the DNN is to recognize if a person shows up in scene, record the time of first appereance and the time when the person leaves the scene. It will send an alarm to the data base alerting of the precense of unauthorized people in the area close to the radioactive source. 
 
+## Disclaimer
+
+A big portion of this code has been generated using chatGPT. 
 
 ## Dependencies
 
