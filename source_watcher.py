@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import time
 from datetime import datetime
+import threading
+import tkinter as tk
 
 
 # -----------------------------------------------------------
@@ -21,9 +23,41 @@ def build_camera_url(local_mode, user, password, ip, forward_port=None):
 
 
 # -----------------------------------------------------------
+# Popup alert window (tkinter)
+# -----------------------------------------------------------
+def show_popup_alert(message):
+    """
+    Display a popup alert window always on top of other windows.
+    Runs in a separate thread so it doesn't block OpenCV.
+    """
+    def _popup():
+        root = tk.Tk()
+        root.title("⚠️ Intruder Alert!")
+        root.attributes('-topmost', True)      # keep window on top
+        root.geometry("400x150+600+350")       # size + position
+        root.configure(bg='red')
+
+        label = tk.Label(root,
+                         text=message,
+                         font=("Arial", 16, "bold"),
+                         fg="white",
+                         bg="red")
+        label.pack(expand=True, fill="both", padx=20, pady=20)
+
+        # Auto-close after 10 seconds
+        root.after(10000, root.destroy)
+        root.mainloop()
+
+    threading.Thread(target=_popup, daemon=True).start()
+
+
+# -----------------------------------------------------------
 # Main DNN surveillance function
 # -----------------------------------------------------------
 def run_surveillance(camera_url):
+    """
+    Run DNN-based person detection on an RTSP camera stream.
+    """
     net = cv2.dnn.readNetFromCaffe("MobileNetSSD_deploy.prototxt",
                                    "MobileNetSSD_deploy.caffemodel")
 
@@ -34,14 +68,14 @@ def run_surveillance(camera_url):
 
     video = cv2.VideoCapture(camera_url)
     if not video.isOpened():
-        print(f"Failed to open camera stream at {camera_url}")
+        print(f"❌ Failed to open camera stream at {camera_url}")
         return
 
     print("\nStarting DNN-based AmBe source surveillance\n")
 
     person_present = False
-    last_alert_time = 0        # Track the last saved alert timestamp
-    alert_cooldown = 300       # 5 minutes in seconds
+    last_alert_time = 0
+    alert_cooldown = 300  # 5 minutes
 
     try:
         while True:
@@ -68,23 +102,26 @@ def run_surveillance(camera_url):
                     (x1, y1, x2, y2) = box.astype("int")
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                     cv2.putText(frame, f"Intruder! {confidence:.2f}",
-                                (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                                (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                                 (0, 0, 255), 2)
 
-            # --- Alert logic ---
             current_time = time.time()
 
             if detected and not person_present:
                 person_present = True
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                # Only save an image if cooldown has passed
                 if current_time - last_alert_time > alert_cooldown:
-                    print(f"ALERT: PERSON DETECTED at {ts}")
+                    print(f"🚨 ALERT: PERSON DETECTED at {ts}")
                     cv2.imwrite(f"alert_{int(current_time)}.jpg", frame)
                     last_alert_time = current_time
+
+                    # --- Popup alert window ---
+                    show_popup_alert(f"Person detected at {ts}")
                 else:
-                    print(f"Person detected but still in cooldown ({int(alert_cooldown - (current_time - last_alert_time))}s left)")
+                    remaining = int(alert_cooldown - (current_time - last_alert_time))
+                    print(f"Person detected but still in cooldown ({remaining}s left)")
 
             elif not detected and person_present:
                 person_present = False
