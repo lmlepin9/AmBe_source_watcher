@@ -4,7 +4,29 @@ import time
 import shutil
 import subprocess
 import os
+import requests
 from datetime import datetime
+
+# -----------------------------------------------------------
+# Slack DM configuration
+# -----------------------------------------------------------
+# Replace these two values before running
+SLACK_BOT_TOKEN = "BLABLA"     # looks like: xoxb-...
+SLACK_USER_ID   = "BLABLA"       # looks like: U123ABC456
+
+def send_slack_dm(message):
+    """
+    Send a direct Slack message to a user.
+    """
+    url = "https://slack.com/api/chat.postMessage"
+    headers = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}"}
+    data = {"channel": SLACK_USER_ID, "text": message}
+
+    try:
+        requests.post(url, headers=headers, data=data, timeout=5)
+    except Exception as e:
+        print("Failed to send Slack DM:", e)
+
 
 # -----------------------------------------------------------
 # Helper function to build the RTSP URL
@@ -22,24 +44,16 @@ def build_camera_url(local_mode, user, password, ip, forward_port=None):
 # Terminal-based alert (all red text)
 # -----------------------------------------------------------
 def show_terminal_alert(message):
-    """
-    Open a new terminal window displaying an alert message in red.
-    The terminal remains open until the user closes it.
-    Works with common Linux terminal emulators.
-    """
     RED = "\033[31m"
     RESET = "\033[0m"
 
-    # Entire message in red
     alert_text = f"{RED}INTRUDER ALERT\n\n{message}\n\nThis terminal will remain open until you close it.{RESET}"
 
-    # Detect a terminal emulator
     terminal = shutil.which("xterm") or shutil.which("gnome-terminal") \
                or shutil.which("konsole") or shutil.which("xfce4-terminal") \
                or shutil.which("terminator") or shutil.which("urxvt")
 
     if not terminal:
-        print("No terminal emulator found. Printing alert to console:")
         print(alert_text)
         return
 
@@ -64,37 +78,29 @@ def show_terminal_alert(message):
             cmd = [terminal, "-e", "bash", "-lc", bash_command]
 
         subprocess.Popen(cmd)
-    except Exception as e:
-        print("Failed to open terminal for alert:", e)
+    except Exception:
         print(alert_text)
 
 
 # -----------------------------------------------------------
-# Datetime overlay helper
+# Datetime overlay on the frame
 # -----------------------------------------------------------
 def draw_datetime_banner(frame):
-    """
-    Draws a semi-transparent banner with weekday, date, and current time
-    on the top-left of the frame.
-    """
     text = datetime.now().strftime("%A %Y-%m-%d %H:%M:%S")
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = 0.7
     thickness = 2
     (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
 
-    x, y = 12, 12 + th   # top-left corner text baseline
+    x, y = 12, 12 + th
     pad = 8
 
-    # Background rectangle (semi-transparent)
     x1, y1 = x - pad, y - th - pad
     x2, y2 = x + tw + pad, y + baseline + pad
     overlay = frame.copy()
     cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), -1)
-    alpha = 0.45
-    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, dst=frame)
+    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
 
-    # Text (white)
     cv2.putText(frame, text, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
 
@@ -102,9 +108,6 @@ def draw_datetime_banner(frame):
 # Main DNN surveillance function
 # -----------------------------------------------------------
 def run_surveillance(camera_url):
-    """
-    Run DNN-based person detection on an RTSP camera stream.
-    """
     net = cv2.dnn.readNetFromCaffe("MobileNetSSD_deploy.prototxt",
                                    "MobileNetSSD_deploy.caffemodel")
 
@@ -113,13 +116,9 @@ def run_surveillance(camera_url):
                "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
                "sofa", "train", "tvmonitor"]
 
-    # Create directory for alert images
     alert_dir = "alerts"
     if not os.path.exists(alert_dir):
         os.makedirs(alert_dir)
-        print(f"Created directory '{alert_dir}' for alert images.")
-    else:
-        print(f"Using existing directory '{alert_dir}' for alert images.")
 
     video = cv2.VideoCapture(camera_url)
     if not video.isOpened():
@@ -130,7 +129,7 @@ def run_surveillance(camera_url):
 
     person_present = False
     last_alert_time = 0
-    alert_cooldown = 300  # 5 minutes
+    alert_cooldown = 300
 
     try:
         while True:
@@ -156,10 +155,6 @@ def run_surveillance(camera_url):
                     box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
                     (x1, y1, x2, y2) = box.astype("int")
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                    cv2.putText(frame, f"Person {confidence:.2f}",
-                                (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                                (0, 0, 255), 2)
 
             current_time = time.time()
 
@@ -168,36 +163,32 @@ def run_surveillance(camera_url):
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 if current_time - last_alert_time > alert_cooldown:
-                    print(f"ALERT: PERSON DETECTED at {ts}")
                     filename = os.path.join(alert_dir, f"alert_{int(current_time)}.jpg")
                     cv2.imwrite(filename, frame)
                     last_alert_time = current_time
 
-                    show_terminal_alert(f"Person detected at {ts}\nImage saved: {filename}")
+                    alert_message = f"INTRUDER DETECTED at {ts}\nImage saved: {filename}"
+                    show_terminal_alert(alert_message)
+                    send_slack_dm(alert_message)
+
                 else:
                     remaining = int(alert_cooldown - (current_time - last_alert_time))
-                    print(f"Person detected but still in cooldown ({remaining}s left)")
+                    print(f"Person detected but cooldown active ({remaining}s)")
 
             elif not detected and person_present:
                 person_present = False
-                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"Scene clear at {ts}")
 
-            # Draw date/time banner every frame
             draw_datetime_banner(frame)
-
             cv2.imshow("Surveillance", frame)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
-                print("Exit requested via keyboard.")
                 break
 
             if cv2.getWindowProperty("Surveillance", cv2.WND_PROP_VISIBLE) < 1:
-                print("Window closed, exiting surveillance.")
                 break
 
     except KeyboardInterrupt:
-        print("\nProgram interrupted by user.")
+        pass
 
     video.release()
     cv2.destroyAllWindows()
@@ -221,7 +212,5 @@ if __name__ == "__main__":
     else:
         raise ValueError("Invalid mode. Choose 'local' or 'tunnel'.")
 
-    print(f"\nConnecting to camera stream: {camera_url}\n")
-    print("Press 'q' in the window, close the window, or type Ctrl+C to exit.\n")
-
+    print(f"\nConnecting to: {camera_url}\n")
     run_surveillance(camera_url)
